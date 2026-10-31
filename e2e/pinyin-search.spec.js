@@ -40,8 +40,32 @@ test('人员选择与人员管理支持全拼、缩写和逐级输入过滤', as
   await expect(page.locator(`#resource-list tr[data-id="${resourceId}"]`)).toBeVisible();
   await expect(page.locator('#resource-list .res-name').filter({ hasText: 'E2E员工' })).toHaveCount(0);
   await expect(page.locator('#resource-search')).toBeFocused();
+  await managementSearch.fill('pinyin');
+  await managementSearch.evaluate(el => el.setSelectionRange(3, 3));
+  await managementSearch.press('x');
+  await expect(managementSearch).toHaveValue('pinxyin');
+  expect(await managementSearch.evaluate(el => el.selectionStart)).toBe(4);
+  await managementSearch.evaluate(el => {
+    el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    el.value = '拼音';
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }));
+    el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '拼音' }));
+  });
+  await expect(page.locator(`#resource-list tr[data-id="${resourceId}"]`)).toBeVisible();
   await managementSearch.fill('buzai');
   await expect(page.getByText('没有匹配的人员')).toBeVisible();
+});
+
+test('拼音匹配支持混合输入并避免空格导致的错误匹配', async ({ page }) => {
+  await loginAsAdmin(page);
+  await goToPage(page, 'projects');
+  await page.locator('#pc-search').focus();
+  await expect.poll(() => page.evaluate(() => !!window.pinyinPro)).toBeTruthy();
+  const results = await page.evaluate(() => {
+    const match = window.CrewNameSearch.matchesName;
+    return ['shi', 'shika', 'shikan', 'sk', 'shi k', '世kan', 's a'].map(q => match('世看', q));
+  });
+  expect(results).toEqual([true, true, true, true, true, true, false]);
 });
 
 test('项目/客户搜索支持拼音，原有中文搜索保持可用', async ({ page }) => {

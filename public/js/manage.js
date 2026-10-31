@@ -96,6 +96,10 @@ function renderResourceManagement() {
   var allResources = resourceArchiveView ? archivedResources : managedResources;
   var container = document.getElementById('resource-list');
   if (!container) return;
+  var previousSearch = document.getElementById('resource-search');
+  var searchFocused = previousSearch && document.activeElement === previousSearch;
+  var selectionStart = searchFocused ? previousSearch.selectionStart : null;
+  var selectionEnd = searchFocused ? previousSearch.selectionEnd : null;
 
   var resources = allResources.filter(function (r) {
     return window.CrewNameSearch
@@ -208,16 +212,26 @@ function renderResourceManagement() {
     '</div>' : '') +
     (resourceArchiveView ? '<p class="resource-archive-hint">' + t('manage.archive_resource_hint') + '</p>' : '') + listHtml;
   var searchInput = document.getElementById('resource-search');
+  if (previousSearch && searchInput) {
+    searchInput.replaceWith(previousSearch);
+    searchInput = previousSearch;
+    if (searchFocused) {
+      searchInput.focus();
+      searchInput.setSelectionRange(selectionStart, selectionEnd);
+    }
+  }
   if (searchInput) {
-    searchInput.addEventListener('input', function () {
-      resourceSearchQuery = searchInput.value.trim();
+    searchInput.oninput = function (event) {
+      if (event.isComposing) return;
+      resourceSearchQuery = searchInput.value;
       renderResourceManagement();
-      var nextInput = document.getElementById('resource-search');
-      if (nextInput) {
-        nextInput.focus();
-        nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
-      }
-    });
+    };
+    if (searchInput._resourceCompositionEnd) searchInput.removeEventListener('compositionend', searchInput._resourceCompositionEnd);
+    searchInput._resourceCompositionEnd = function () {
+      resourceSearchQuery = searchInput.value;
+      renderResourceManagement();
+    };
+    searchInput.addEventListener('compositionend', searchInput._resourceCompositionEnd);
   }
   ['active', 'archived'].forEach(function (tab) {
     document.getElementById('resource-tab-' + tab).addEventListener('click', function () {

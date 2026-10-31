@@ -26,11 +26,10 @@
       if (!pinyinApi) return;
       // Indexes built before the library arrived have no pinyin.
       cache = Object.create(null);
-      // Re-run the filter the user is typing into.
-      var active = document.activeElement;
-      if (active && active.matches && active.matches(SEARCH_INPUT) && active.value) {
-        active.dispatchEvent(new Event('input', { bubbles: true }));
-      }
+      // Refresh pending searches even if the user has moved focus meanwhile.
+      document.querySelectorAll(SEARCH_INPUT).forEach(function (input) {
+        if (input.value && !input._crewComposing) input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
     };
     loading.onerror = function () { loading = null; };
     document.head.appendChild(loading);
@@ -39,6 +38,8 @@
   document.addEventListener('focusin', function (event) {
     if (event.target && event.target.matches && event.target.matches(SEARCH_INPUT)) ensurePinyin();
   });
+  document.addEventListener('compositionstart', function (event) { event.target._crewComposing = true; });
+  document.addEventListener('compositionend', function (event) { event.target._crewComposing = false; }, true);
 
   function decodeEntities(value) {
     return String(value || '')
@@ -98,15 +99,6 @@
     return cache[text];
   }
 
-  function isOrderedSubsequence(needle, haystack) {
-    if (!needle) return true;
-    var at = 0;
-    for (var i = 0; i < haystack.length && at < needle.length; i++) {
-      if (haystack.charAt(i) === needle.charAt(at)) at++;
-    }
-    return at === needle.length;
-  }
-
   /**
    * Match one query against one name.
    * - direct text: substring
@@ -128,7 +120,9 @@
     var py = target.pinyin;
     if (!py) return false;
     if (py.indexOf(qCompact) >= 0) return true;
-    if (q.indexOf(' ') >= 0 && isOrderedSubsequence(qCompact, py)) return true;
+    if ((q.indexOf(' ') >= 0 || /[^\x00-\x7f]/.test(q)) && pinyinApi &&
+        typeof pinyinApi.match === 'function' &&
+        pinyinApi.match(target.text, q, { surname: 'head' })) return true;
     return target.initials.indexOf(qCompact) >= 0 ||
       target.initialWords.indexOf(qCompact) >= 0;
   }

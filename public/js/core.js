@@ -617,6 +617,7 @@ window.initAccessiblePicker = function initAccessiblePicker(picker, label, multi
     if (!open || (active && active.style.display === 'none')) setActive(null);
   }
   input.addEventListener('keydown', function (event) {
+    if (event.isComposing || event.keyCode === 229) return;
     var visible = options.filter(function (option) { return option.style.display !== 'none'; });
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
