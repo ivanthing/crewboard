@@ -138,8 +138,40 @@ echo "=== [7/7] 重启主服务 crewboard（固定端口 3000）==="
 # 使用 startOrReload 确保每次都从 ecosystem.config.js 读取最新配置（含 PORT=3000）
 # 避免 pm2 restart 不重新读取 ecosystem 导致的端口漂移
 # 只 reload crewboard 主服务，不碰定时脚本（避免误触发提醒）
+
+# PM2 的 startOrReload 会保留旧进程上的 cron_restart，即使配置文件已删除该项。
+# 如果检测到这种漂移，必须删除后重建，否则主服务会继续被周期性重启。
+pm2_crewboard_cron_state() {
+  pm2 jlist 2>/dev/null | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { raw += chunk; });
+process.stdin.on("end", () => {
+  const app = JSON.parse(raw).find(item => item.name === "crewboard");
+  const state = !app ? "missing" : (app.pm2_env && app.pm2_env.cron_restart ? "drift" : "clean");
+  process.stdout.write(state);
+});
+' 2>/dev/null || printf 'error'
+}
+
+CRON_STATE=$(pm2_crewboard_cron_state)
+if [ "$CRON_STATE" = "drift" ]; then
+  echo "  ⚠️ 检测到 crewboard 残留 cron_restart，重建 PM2 进程定义"
+  pm2 delete crewboard >/dev/null
+elif [ "$CRON_STATE" != "clean" ] && [ "$CRON_STATE" != "missing" ]; then
+  echo "  ❌ 无法确认 crewboard 的 PM2 配置，中止重启"
+  exit 1
+fi
+
 pm2 startOrReload ecosystem.config.js --only crewboard --update-env
 sleep 2
+
+CRON_STATE=$(pm2_crewboard_cron_state)
+if [ "$CRON_STATE" != "clean" ]; then
+  echo "  ❌ crewboard 仍有异常 cron_restart（state=${CRON_STATE}）"
+  exit 1
+fi
+
 pm2 status crewboard
 
 echo ""

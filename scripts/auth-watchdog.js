@@ -34,6 +34,14 @@ function log(msg) {
   console.log('[auth-watchdog] ' + new Date().toISOString() + ' ' + msg);
 }
 
+function describeError(err) {
+  const cause = err && err.cause;
+  if (!cause) return err && err.message ? err.message : String(err);
+  const code = cause.code || cause.name || 'cause';
+  const message = cause.message || String(cause);
+  return (err.message || String(err)) + ' (' + code + ': ' + message + ')';
+}
+
 async function fetchJson(method, path, body, authToken) {
   const headers = { 'Content-Type': 'application/json' };
   if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
@@ -126,7 +134,8 @@ async function sendAlert(failureDetail, restarted) {
 
     log('OK (login + session lookup healthy)');
   } catch (err) {
-    log('FAIL: ' + err.message);
+    const failureDetail = describeError(err);
+    log('FAIL: ' + failureDetail);
     const state = readState();
     const cooldownOk = !state.lastRestartAt || Date.now() - state.lastRestartAt > RESTART_COOLDOWN_MS;
     let restarted = false;
@@ -142,7 +151,7 @@ async function sendAlert(failureDetail, restarted) {
     } else {
       log('restart skipped (cooldown until ' + new Date(state.lastRestartAt + RESTART_COOLDOWN_MS).toISOString() + ')');
     }
-    await sendAlert(err.message, restarted);
+    await sendAlert(failureDetail, restarted);
     process.exitCode = 1;
   } finally {
     // Clean up the watchdog session so the table does not grow

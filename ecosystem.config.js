@@ -61,7 +61,7 @@ module.exports = {
     {
       name: 'crewboard-auth-watchdog',
       script: 'scripts/auth-watchdog.js',
-      cron_restart: '*/10 * * * *', // 每 10 分钟自检：登录 + 会话查询
+      cron_restart: '2,12,22,32,42,52 * * * *', // 每 10 分钟自检，错开整点避免与部署/重启竞争
       autorestart: false,
       watch: false,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',

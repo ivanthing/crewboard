@@ -64,11 +64,11 @@ pm2 status
 | `crewboard-reminder-schedule` | `scripts/reminder-schedule.js` | 每周一 09:00 |
 | `crewboard-reminder-project-code` | `scripts/reminder-project-code.js` | 每周一 10:00 |
 | `crewboard-reminder-timesheet` | `scripts/reminder-timesheet.js` | 每周五 15:00 |
-| `crewboard-auth-watchdog` | `scripts/auth-watchdog.js` | 每 10 分钟 |
+| `crewboard-auth-watchdog` | `scripts/auth-watchdog.js` | 每 10 分钟（错开整点 2 分钟） |
 
 `crewboard-reminder-project-code` 给「创建了缺编号项目」且绑定了企业微信的在职同事发一条汇总提醒。已存档的项目不提醒；`created_by` 为空的历史项目只计数、不发送。首次上线可手动执行 `node scripts/reminder-project-code.js` 确认日志，输出见 `logs/reminder-project-code.log`。
 
-重点确认主进程仍是 `PORT=3000`、`fork`、单实例，并且没有意外的 `cron_restart`。定时任务应分别由 ecosystem 中的任务进程负责，不要让 `crewboard` 主进程承担定时重启。
+重点确认主进程仍是 `PORT=3000`、`fork`、单实例，并且没有意外的 `cron_restart`。定时任务应分别由 ecosystem 中的任务进程负责，不要让 `crewboard` 主进程承担定时重启。`deploy.sh` 会在部署时检测并重建带 `cron_restart` 漂移的主进程，因为 PM2 的 `startOrReload` 不会清除旧进程上的这项配置。
 
 PM2 的保存列表是服务器状态，不是 Git 文件。修改或修复 PM2 进程列表后，只有在检查完所有进程都正确时才执行 `pm2 save`，避免把过期任务一并持久化。
 
