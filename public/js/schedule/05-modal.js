@@ -385,9 +385,8 @@ function buildResourceField(resources, prefix, selectedIds) {
     '</div>';
     teams[tm].forEach(function (r) {
       var sel = selIds.indexOf(r.id) >= 0 ? ' selected' : '';
-      var pinyin = window.CrewNameSearch ? window.CrewNameSearch.pinyinLabel(r.name) : '';
       optionsHtml += '<div class="ms-option' + sel + '" data-id="' + r.id + '"' +
-        (pinyin ? ' data-pinyin="' + escAttr(pinyin) + '"' : '') + '>' +
+        ' data-team="' + escAttr(tm) + '">' +
         '<span class="ms-option-check"></span>' +
         '<span class="ms-option-avatar" style="background:' + (r.color || '#3B7DDD') + '">' + esc(r.name.charAt(0)) + '</span>' +
         '<span class="ms-option-info"><span class="ms-option-name">' + esc(r.name) + '</span>' +
@@ -423,6 +422,10 @@ function initMultiSelect(prefix) {
 
   /* Toggle dropdown on click */
   selectedArea.addEventListener('click', function (e) {
+    if (e.target === searchInput) {
+      dropdown.classList.add('open');
+      return;
+    }
     if (e.target.classList.contains('ms-chip-remove')) {
       /* Remove chip */
       var rid = parseInt(e.target.dataset.id, 10);
@@ -488,7 +491,7 @@ function initMultiSelect(prefix) {
     }
 
     var opt = e.target.closest('.ms-option');
-    if (!opt) return;
+    if (!opt || opt.style.display === 'none') return;
     var rid = parseInt(opt.dataset.id, 10);
 
     if (opt.classList.contains('selected')) {
@@ -512,15 +515,14 @@ function initMultiSelect(prefix) {
   });
 
   /* Search filter */
-  searchInput.addEventListener('input', function () {
-    var q = searchInput.value;
+  window.CrewNameSearch.bindInput(searchInput, function (q) {
     var matcher = window.CrewNameSearch;
     var hasOptionMatch = false;
     dropdown.querySelectorAll('.ms-option').forEach(function (opt) {
       var name = opt.querySelector('.ms-option-name').textContent;
       var role = opt.querySelector('.ms-option-role');
       var match = matcher
-        ? matcher.matchesText(q, [name, role ? role.textContent : '', opt.dataset.pinyin || ''])
+        ? matcher.matchesText(q, [name, role ? role.textContent : '', opt.dataset.team])
         : name.toLowerCase().indexOf(q.toLowerCase()) >= 0;
       opt.style.display = match ? '' : 'none';
       if (match) hasOptionMatch = true;
@@ -544,8 +546,9 @@ function initMultiSelect(prefix) {
       }
       lbl.style.display = anyVisible ? '' : 'none';
     });
-    if (!dropdown.classList.contains('open')) dropdown.classList.add('open');
+    if (document.activeElement === searchInput) dropdown.classList.add('open');
   });
+  searchInput.addEventListener('focus', function () { dropdown.classList.add('open'); });
 
   window.initAccessiblePicker(picker, t('schedule.staff_multiselect'), true);
 }
@@ -882,10 +885,8 @@ function buildProjectOption(p, clientName, selectedProjectId) {
   var sel = (selectedProjectId && selectedProjectId == p.id) ? ' selected' : '';
   var codePrefix = p.code ? '[' + esc(p.code) + '] ' : '';
   var color = p.color || p.client_color || '#3B7DDD';
-  var searchText = (p.name + ' ' + (p.code || '') + ' ' + (clientName || p.client_name || '')).toLowerCase();
-  var pinyin = window.CrewNameSearch ? window.CrewNameSearch.pinyinLabel(searchText) : '';
-  return '<div class="ms-option' + sel + '" data-id="' + p.id + '" data-search="' + escAttr(searchText) + '"' +
-    (pinyin ? ' data-pinyin="' + escAttr(pinyin) + '"' : '') + '>' +
+  return '<div class="ms-option' + sel + '" data-id="' + p.id + '" data-name="' + escAttr(p.name) + '"' +
+    ' data-code="' + escAttr(p.code || '') + '" data-client="' + escAttr(clientName || p.client_name || '') + '">' +
     '<span class="ms-option-check"></span>' +
     '<span class="ms-option-avatar" style="background:' + color + '">' + esc(p.name.charAt(0)) + '</span>' +
     '<span class="ms-option-info"><span class="ms-option-name">' + codePrefix + esc(p.name) + '</span>' +
@@ -1004,11 +1005,10 @@ function initProjectSelect(selectedProjectId) {
     var lowerQuery = q.toLowerCase();
     var hasOptionMatch = false;
     dropdown.querySelectorAll('.ms-option').forEach(function (opt) {
-      var search = opt.dataset.search || '';
-      var name = opt.querySelector('.ms-option-name').textContent;
+      var fields = [opt.dataset.name, opt.dataset.code, opt.dataset.client];
       var match = !q || (matcher
-        ? matcher.matchesText(q, [search, name, opt.dataset.pinyin || ''])
-        : search.indexOf(lowerQuery) >= 0 || name.toLowerCase().indexOf(lowerQuery) >= 0);
+        ? matcher.matchesText(q, fields)
+        : fields.join(' ').toLowerCase().indexOf(lowerQuery) >= 0);
       opt.style.display = match ? '' : 'none';
       if (match) hasOptionMatch = true;
     });
@@ -1068,10 +1068,11 @@ function initProjectSelect(selectedProjectId) {
     dropdown.classList.remove('open');
   });
 
-  searchInput.addEventListener('input', function () {
-    filterProjectOptions(searchInput.value);
-    if (!dropdown.classList.contains('open')) dropdown.classList.add('open');
+  window.CrewNameSearch.bindInput(searchInput, function (query) {
+    filterProjectOptions(query);
+    if (document.activeElement === searchInput) dropdown.classList.add('open');
   });
+  searchInput.addEventListener('focus', function () { dropdown.classList.add('open'); });
 
   window.initAccessiblePicker(picker, t('schedule.project_client'), false);
 

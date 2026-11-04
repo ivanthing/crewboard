@@ -19,6 +19,13 @@ async function loginAsAdmin(page, state = loadState()) {
   await expect(page.locator('#auth-page')).toBeHidden();
 }
 
+/** Business UI tests reuse the seeded real session; auth.spec.js still exercises login. */
+async function restoreAdminSession(page, state = loadState()) {
+  await page.addInitScript(token => localStorage.setItem('rg_token', token), state.token);
+  await page.goto('/');
+  await expect(page.locator('#main-app')).toBeVisible();
+}
+
 /** Navigate sidebar by data-page */
 async function goToPage(page, pageName) {
   await page.locator(`.nav-item[data-page="${pageName}"]`).click();
@@ -85,6 +92,7 @@ function nextWeekdayDate() {
 module.exports = {
   loadState,
   loginAsAdmin,
+  restoreAdminSession,
   goToPage,
   selectProjectInModal,
   ensureResourceSelected,

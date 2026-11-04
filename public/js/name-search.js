@@ -1,7 +1,7 @@
 /* ============================================================
    name-search.js — shared Chinese name search helpers
-   Supports direct text, full pinyin prefixes, spaced pinyin words,
-   and pinyin initials. Loaded before the page modules.
+   Supports Chinese text, pinyin, initials, mixed input and keywords
+   across fields. Loaded before the page modules.
    pinyin-pro (~145 KB gzipped) is loaded on demand: when a search
    field gains focus, or on the first non-empty query. Until it
    arrives, matching falls back to plain text.
@@ -9,7 +9,8 @@
 (function (root) {
   'use strict';
 
-  var cache = Object.create(null);
+  var cache = new Map();
+  var MAX_INDEXES = 2000;
   var pinyinApi = root.pinyinPro || null;
   var SEARCH_INPUT = 'input[type="search"], input[id$="-search"], input.ms-search';
   var script = document.currentScript;
@@ -23,15 +24,16 @@
     loading.async = true;
     loading.onload = function () {
       pinyinApi = root.pinyinPro || null;
+      loading = null;
       if (!pinyinApi) return;
       // Indexes built before the library arrived have no pinyin.
-      cache = Object.create(null);
+      cache.clear();
       // Refresh pending searches even if the user has moved focus meanwhile.
       document.querySelectorAll(SEARCH_INPUT).forEach(function (input) {
         if (input.value && !input._crewComposing) input.dispatchEvent(new Event('input', { bubbles: true }));
       });
     };
-    loading.onerror = function () { loading = null; };
+    loading.onerror = function () { loading.remove(); loading = null; };
     document.head.appendChild(loading);
   }
 
@@ -41,18 +43,9 @@
   document.addEventListener('compositionstart', function (event) { event.target._crewComposing = true; });
   document.addEventListener('compositionend', function (event) { event.target._crewComposing = false; }, true);
 
-  function decodeEntities(value) {
-    return String(value || '')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;/g, "'");
-  }
-
   function normalize(value) {
-    return decodeEntities(value)
+    // Values come from API records or textContent, not HTML markup.
+    return String(value == null ? '' : value)
       .normalize('NFKC')
       .toLowerCase()
       .replace(/[\s\u00a0]+/g, ' ')
@@ -64,7 +57,7 @@
   }
 
   function pinyinWords(value) {
-    var text = String(value || '').trim();
+    var text = normalize(value);
     if (!text || !pinyinApi || typeof pinyinApi.pinyin !== 'function') return [];
     try {
       return pinyinApi.pinyin(text, {
@@ -85,6 +78,7 @@
     return {
       text: text,
       compact: compact(text),
+      pinyinText: compact(text).replace(/[\p{P}\p{S}]/gu, ''),
       pinyin: words.join(''),
       initials: words.map(function (word) { return word.charAt(0); }).join(''),
       initialWords: words.map(function (word) {
@@ -95,17 +89,20 @@
 
   function getIndex(value) {
     var text = normalize(value);
-    if (!cache[text]) cache[text] = buildIndex(text);
-    return cache[text];
+    if (!cache.has(text)) {
+      if (cache.size >= MAX_INDEXES) cache.delete(cache.keys().next().value);
+      cache.set(text, buildIndex(text));
+    }
+    return cache.get(text);
   }
 
-  /**
-   * Match one query against one name.
-   * - direct text: substring
-   * - full pinyin: progressive prefix ("shi", "shik", "shika" -> 世看)
-   * - spaced pinyin: each word must be an ordered fragment ("shi k")
-   * - initials: ordered subsequence ("sk" -> 世看)
-   */
+  function normalizePinyin(value) {
+    return value.replace(/u:|[üǖǘǚǜ]/g, 'v')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/['’]/g, '');
+  }
+
+  /** Text substrings; contiguous pinyin syllable prefixes, initials and mixed input. */
   function matchesName(value, query) {
     var q = normalize(query);
     if (!q) return true;
@@ -117,14 +114,23 @@
     var qCompact = q.replace(/\s+/g, '');
     if (!qCompact) return true;
     if (target.compact.indexOf(qCompact) >= 0) return true;
-    var py = target.pinyin;
-    if (!py) return false;
-    if (py.indexOf(qCompact) >= 0) return true;
-    if ((q.indexOf(' ') >= 0 || /[^\x00-\x7f]/.test(q)) && pinyinApi &&
-        typeof pinyinApi.match === 'function' &&
-        pinyinApi.match(target.text, q, { surname: 'head' })) return true;
-    return target.initials.indexOf(qCompact) >= 0 ||
-      target.initialWords.indexOf(qCompact) >= 0;
+    // Space-separated terms may appear in any order, just like list searches.
+    if (q.indexOf(' ') >= 0) {
+      return q.split(' ').every(function (term) { return matchesName(value, term); });
+    }
+    if (!pinyinApi || typeof pinyinApi.match !== 'function') return false;
+    var pyQuery = normalizePinyin(q);
+    if (!/[a-z]/.test(pyQuery) || /[^a-z\u3400-\u9fff]/.test(pyQuery)) return false;
+    // Do not match the middle of a syllable ("ha" in "zhang") or skip
+    // characters ("zs" in 张小三). match() also handles polyphonic names.
+    return !!pinyinApi.match(target.pinyinText, pyQuery, {
+      precision: 'start',
+      lastPrecision: 'start',
+      continuous: true,
+      space: 'ignore',
+      insensitive: true,
+      v: true
+    });
   }
 
   /** Match text across one or more fields, keeping the same pinyin rules. */
@@ -132,8 +138,34 @@
     var q = normalize(query);
     if (!q) return true;
     var list = Array.isArray(values) ? values : [values];
-    if (matchesName(list.join(' '), q)) return true;
-    return list.some(function (value) { return matchesName(value, q); });
+    return q.split(' ').every(function (term) {
+      return list.some(function (value) { return matchesName(value, term); });
+    });
+  }
+
+  /** Rebinding is safe for the personnel search input retained across renders. */
+  function bindInput(input, onQuery) {
+    if (input._crewSearchCleanup) input._crewSearchCleanup();
+    // Management search gets the browser's clear affordance; comboboxes keep
+    // their text-input semantics and existing Escape-to-close behavior.
+    if (input.type === 'text' && !input.classList.contains('ms-search')) input.type = 'search';
+    input.setAttribute && input.setAttribute('autocomplete', 'off');
+    input.setAttribute && input.setAttribute('spellcheck', 'false');
+    input.setAttribute && input.setAttribute('enterkeyhint', 'search');
+    if (input.setAttribute && typeof root.t === 'function') input.setAttribute('title', root.t('common.search_hint'));
+    function update(event) {
+      if (!event.isComposing && !input._crewComposing) onQuery(input.value);
+    }
+    function start() { input._crewComposing = true; }
+    function end() { input._crewComposing = false; onQuery(input.value); }
+    input.addEventListener('input', update);
+    input.addEventListener('compositionstart', start);
+    input.addEventListener('compositionend', end);
+    input._crewSearchCleanup = function () {
+      input.removeEventListener('input', update);
+      input.removeEventListener('compositionstart', start);
+      input.removeEventListener('compositionend', end);
+    };
   }
 
   function pinyinLabel(value) {
@@ -148,6 +180,7 @@
     buildIndex: buildIndex,
     matchesName: matchesName,
     matchesText: matchesText,
+    bindInput: bindInput,
     pinyinLabel: pinyinLabel
   };
 })(window);

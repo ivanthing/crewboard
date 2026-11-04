@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
-const { loginAsAdmin, goToPage, loadState } = require('./helpers');
+const { restoreAdminSession, goToPage, loadState } = require('./helpers');
 
-test.beforeEach(async ({ page }) => { await loginAsAdmin(page); });
+test.beforeEach(async ({ page }) => { await restoreAdminSession(page); });
 
 async function createPerson(page, name) {
   return page.evaluate(async name => {

@@ -102,9 +102,10 @@ function renderResourceManagement() {
   var selectionEnd = searchFocused ? previousSearch.selectionEnd : null;
 
   var resources = allResources.filter(function (r) {
+    var fields = [r.name, r.team || t('manage.ungrouped'), r.role, r.email, r.user_phone];
     return window.CrewNameSearch
-      ? window.CrewNameSearch.matchesName(r.name, resourceSearchQuery)
-      : !resourceSearchQuery || (r.name || '').toLowerCase().indexOf(resourceSearchQuery.toLowerCase()) >= 0;
+      ? window.CrewNameSearch.matchesText(resourceSearchQuery, fields)
+      : !resourceSearchQuery || fields.join(' ').toLowerCase().indexOf(resourceSearchQuery.toLowerCase()) >= 0;
   });
 
   var teams = {};
@@ -206,7 +207,7 @@ function renderResourceManagement() {
     (allResources.length ? '<div class="resource-list-tools">' +
       '<label class="resource-search-box" for="resource-search">' +
         '<svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M14 14l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' +
-        '<input type="search" id="resource-search" value="' + escapeAttr(resourceSearchQuery) + '" placeholder="' + escapeAttr(t('schedule.search_resource')) + '" aria-label="' + escapeAttr(t('schedule.search_resource')) + '" autocomplete="off">' +
+        '<input type="search" id="resource-search" value="' + escapeAttr(resourceSearchQuery) + '" placeholder="' + escapeAttr(t('manage.search_resources')) + '" aria-label="' + escapeAttr(t('manage.search_resources')) + '" autocomplete="off">' +
       '</label>' +
       '<span class="resource-search-count">' + (resourceSearchQuery ? resources.length + ' / ' + allResources.length : allResources.length) + '</span>' +
     '</div>' : '') +
@@ -221,17 +222,12 @@ function renderResourceManagement() {
     }
   }
   if (searchInput) {
-    searchInput.oninput = function (event) {
-      if (event.isComposing) return;
-      resourceSearchQuery = searchInput.value;
+    searchInput.placeholder = t('manage.search_resources');
+    searchInput.setAttribute('aria-label', t('manage.search_resources'));
+    window.CrewNameSearch.bindInput(searchInput, function (query) {
+      resourceSearchQuery = query;
       renderResourceManagement();
-    };
-    if (searchInput._resourceCompositionEnd) searchInput.removeEventListener('compositionend', searchInput._resourceCompositionEnd);
-    searchInput._resourceCompositionEnd = function () {
-      resourceSearchQuery = searchInput.value;
-      renderResourceManagement();
-    };
-    searchInput.addEventListener('compositionend', searchInput._resourceCompositionEnd);
+    });
   }
   ['active', 'archived'].forEach(function (tab) {
     document.getElementById('resource-tab-' + tab).addEventListener('click', function () {
@@ -702,6 +698,15 @@ function bindPCNewButton() {
 }
 
 function renderPCPage() {
+  var searchInput = document.getElementById('pc-search');
+  if (searchInput) {
+    var searchKey = pcActiveTab === 'clients' ? 'manage.search_clients'
+      : pcActiveTab === 'archived' ? 'manage.search_archived' : 'schedule.search_project';
+    searchInput.setAttribute('data-i18n-placeholder', searchKey);
+    searchInput.setAttribute('data-i18n-aria-label', searchKey);
+    searchInput.placeholder = t(searchKey);
+    searchInput.setAttribute('aria-label', t(searchKey));
+  }
   // Update tab counts
   var tabProjects = document.getElementById('tab-projects');
   var tabClients = document.getElementById('tab-clients');
@@ -934,8 +939,8 @@ function renderClientsTable(container) {
   var filtered = state.clients.filter(function (c) {
     if (!query) return true;
     return matcher
-      ? matcher.matchesText(query, [c.name || ''])
-      : (c.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0;
+      ? matcher.matchesText(query, [c.name, c.details])
+      : [c.name, c.details].join(' ').toLowerCase().indexOf(query.toLowerCase()) >= 0;
   });
 
   if (filtered.length === 0) {
@@ -1336,8 +1341,8 @@ function renderArchivedPage(container) {
   var archivedClients = (state.archivedClients || []).filter(function (c) {
     if (!query) return true;
     return matcher
-      ? matcher.matchesText(query, [c.name || ''])
-      : (c.name || '').toLowerCase().indexOf(query.toLowerCase()) >= 0;
+      ? matcher.matchesText(query, [c.name, c.details])
+      : [c.name, c.details].join(' ').toLowerCase().indexOf(query.toLowerCase()) >= 0;
   });
 
   if (!archivedProjects.length && !archivedClients.length) {
@@ -1459,8 +1464,8 @@ document.addEventListener('DOMContentLoaded', function () {
   // Search input
   var searchInput = document.getElementById('pc-search');
   if (searchInput) {
-    searchInput.addEventListener('input', function () {
-      pcSearchQuery = searchInput.value.trim();
+    window.CrewNameSearch.bindInput(searchInput, function (query) {
+      pcSearchQuery = window.CrewNameSearch.normalize(query);
       renderPCPage();
     });
   }
